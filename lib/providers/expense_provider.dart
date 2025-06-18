@@ -13,6 +13,8 @@ class ExpenseProvider with ChangeNotifier {
   final DatabaseHelper _dbHelper = DatabaseHelper.instance;
   SortBy _sortBy = SortBy.date_newest;
   Category? _filterCategory;
+  String _searchQuery = '';
+  DateTime? _filterDate;
 
   List<Expense> get expenses {
     List<Expense> filteredExpenses = _expenses;
@@ -21,11 +23,31 @@ class ExpenseProvider with ChangeNotifier {
           .where((exp) => exp.category == _filterCategory)
           .toList();
     }
+
+    if (_filterDate != null) {
+      filteredExpenses = filteredExpenses.where((exp) {
+        // Compare year, month, and day, ignoring the time part of DateTime
+        return exp.date.year == _filterDate!.year &&
+            exp.date.month == _filterDate!.month &&
+            exp.date.day == _filterDate!.day;
+      }).toList();
+    }
+
+    if (_searchQuery.isNotEmpty) {
+      filteredExpenses = filteredExpenses
+          .where(
+            (exp) =>
+                exp.title.toLowerCase().contains(_searchQuery.toLowerCase()),
+          )
+          .toList();
+    }
+
     return filteredExpenses;
   }
 
   SortBy get sortBy => _sortBy;
   Category? get filterCategory => _filterCategory;
+  DateTime? get filterDate => _filterDate;
 
   ExpenseProvider() {
     fetchExpenses();
@@ -72,5 +94,15 @@ class ExpenseProvider with ChangeNotifier {
   void setFilterCategory(Category? category) {
     _filterCategory = category;
     notifyListeners(); // Just notify, no need to refetch as filtering is done on the client side
+  }
+
+  void setSearchQuery(String query) {
+    _searchQuery = query;
+    notifyListeners(); // Notify listeners to rebuild the UI with the filtered list
+  }
+
+  void setFilterDate(DateTime? date) {
+    _filterDate = date;
+    notifyListeners();
   }
 }

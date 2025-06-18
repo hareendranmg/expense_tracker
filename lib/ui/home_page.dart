@@ -10,16 +10,84 @@ import '../models/expense_model.dart';
 import '../providers/expense_provider.dart';
 import 'add_edit_expense_page.dart';
 
-class HomePage extends StatelessWidget {
+class HomePage extends StatefulWidget {
   const HomePage({super.key});
 
   @override
+  State<HomePage> createState() => _HomePageState();
+}
+
+class _HomePageState extends State<HomePage> {
+  final _searchController = TextEditingController();
+
+  @override
+  void initState() {
+    super.initState();
+    _searchController.addListener(() {
+      if (_searchController.text.isEmpty) {
+        Provider.of<ExpenseProvider>(context, listen: false).setSearchQuery('');
+      }
+    });
+  }
+
+  @override
+  void dispose() {
+    _searchController.dispose();
+    super.dispose();
+  }
+
+  @override
   Widget build(BuildContext context) {
+    // We need to listen for changes to the search text to update the suffixIcon
+    final provider = Provider.of<ExpenseProvider>(context);
+
     return Scaffold(
       body: CustomScrollView(
         slivers: [
           SliverAppBar(
-            title: const Text('Expense Tracker'),
+            title: SizedBox(
+              height: 40,
+              child: TextField(
+                controller: _searchController,
+                onChanged: (value) {
+                  // No need to call provider here if listener is set up, but this is more immediate.
+                  // Let's call provider directly for simplicity and instant feedback.
+                  Provider.of<ExpenseProvider>(
+                    context,
+                    listen: false,
+                  ).setSearchQuery(value);
+                  // We call setState to rebuild the suffixIcon of the textfield
+                  setState(() {});
+                },
+                decoration: InputDecoration(
+                  hintText: 'Search expenses...',
+                  prefixIcon: const Icon(Icons.search, size: 20),
+                  suffixIcon: _searchController.text.isNotEmpty
+                      ? IconButton(
+                          icon: const Icon(Icons.clear, size: 20),
+                          onPressed: () {
+                            _searchController.clear();
+                            Provider.of<ExpenseProvider>(
+                              context,
+                              listen: false,
+                            ).setSearchQuery('');
+                            setState(() {});
+                          },
+                        )
+                      : null,
+                  contentPadding: const EdgeInsets.symmetric(
+                    vertical: 0,
+                    horizontal: 12,
+                  ),
+                  filled: true,
+                  fillColor: Colors.white.withOpacity(0.1),
+                  border: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(20),
+                    borderSide: BorderSide.none,
+                  ),
+                ),
+              ),
+            ),
             pinned: true,
             expandedHeight: 250.0,
             flexibleSpace: FlexibleSpaceBar(
@@ -27,11 +95,7 @@ class HomePage extends StatelessWidget {
                 padding: const EdgeInsets.only(
                   top: 80.0,
                 ), // Adjust for app bar height
-                child: Consumer<ExpenseProvider>(
-                  builder: (context, provider, child) {
-                    return _buildChart(context, provider.expenses);
-                  },
-                ),
+                child: _buildChart(context, provider.expenses),
               ),
             ),
           ),
@@ -49,6 +113,21 @@ class HomePage extends StatelessWidget {
         child: const Icon(Icons.add),
       ),
     );
+  }
+
+  Future<void> _selectFilterDate(BuildContext context) async {
+    final provider = Provider.of<ExpenseProvider>(context, listen: false);
+    final DateTime? picked = await showDatePicker(
+      context: context,
+      initialDate: provider.filterDate ?? DateTime.now(),
+      firstDate: DateTime(2000),
+      lastDate: DateTime.now().add(
+        const Duration(days: 365),
+      ), // Allow future dates if needed
+    );
+    if (picked != null) {
+      provider.setFilterDate(picked);
+    }
   }
 
   Widget _buildChart(BuildContext context, List<Expense> expenses) {
@@ -129,59 +208,100 @@ class HomePage extends StatelessWidget {
     );
   }
 
+  // --- MODIFIED AND CORRECTED WIDGET ---
   Widget _buildControls(BuildContext context) {
-    final provider = Provider.of<ExpenseProvider>(context, listen: false);
-    final currentSortBy = Provider.of<ExpenseProvider>(context).sortBy;
-    final currentFilter = Provider.of<ExpenseProvider>(context).filterCategory;
+    final provider = Provider.of<ExpenseProvider>(context);
 
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 8.0),
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+      child: Column(
         children: [
-          // Sorting Dropdown
-          DropdownButton<SortBy>(
-            value: currentSortBy,
-            underline: Container(),
-            items: SortBy.values.map((sort) {
-              return DropdownMenuItem(
-                value: sort,
-                child: Text(
-                  sort
-                      .toString()
-                      .split('.')
-                      .last
-                      .replaceAll('_', ' ')
-                      .capitalize(),
-                ),
-              );
-            }).toList(),
-            onChanged: (value) {
-              if (value != null) {
-                provider.setSortBy(value);
-              }
-            },
-          ),
-          // Filtering Dropdown
-          DropdownButton<Category?>(
-            value: currentFilter,
-            hint: const Text('Filter'),
-            underline: Container(),
-            items: [
-              const DropdownMenuItem<Category?>(
-                value: null,
-                child: Text('All Categories'),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              // Sorting Dropdown
+              DropdownButton<SortBy>(
+                value: provider.sortBy,
+                underline: Container(),
+                items: SortBy.values.map((sort) {
+                  return DropdownMenuItem(
+                    value: sort,
+                    child: Text(
+                      sort
+                          .toString()
+                          .split('.')
+                          .last
+                          .replaceAll('_', ' ')
+                          .capitalize(),
+                    ),
+                  );
+                }).toList(),
+                onChanged: (value) {
+                  if (value != null) {
+                    Provider.of<ExpenseProvider>(
+                      context,
+                      listen: false,
+                    ).setSortBy(value);
+                  }
+                },
               ),
-              ...Category.values.map((cat) {
-                return DropdownMenuItem(
-                  value: cat,
-                  child: Text(cat.toString().split('.').last.capitalize()),
-                );
-              }),
+
+              // Filtering Dropdown
+              DropdownButton<Category?>(
+                value: provider.filterCategory,
+                hint: const Text('All'),
+                underline: Container(),
+                items: [
+                  const DropdownMenuItem<Category?>(
+                    value: null,
+                    child: Text('All Categories'),
+                  ),
+                  ...Category.values.map((cat) {
+                    return DropdownMenuItem(
+                      value: cat,
+                      child: Text(cat.toString().split('.').last.capitalize()),
+                    );
+                  }),
+                ],
+                onChanged: (value) {
+                  Provider.of<ExpenseProvider>(
+                    context,
+                    listen: false,
+                  ).setFilterCategory(value);
+                },
+              ),
             ],
-            onChanged: (value) {
-              provider.setFilterCategory(value);
-            },
+          ),
+          const SizedBox(height: 8),
+          // CORRECTED: Use InputChip on a new line
+          InputChip(
+            avatar: const Icon(Icons.calendar_today, size: 18),
+            label: Text(
+              provider.filterDate == null
+                  ? 'Filter by Date'
+                  : DateFormat.yMMMd().format(provider.filterDate!),
+              style: const TextStyle(fontWeight: FontWeight.w500),
+            ),
+            selected: provider.filterDate != null,
+            selectedColor: Theme.of(context).primaryColor.withOpacity(0.2),
+            onPressed: () => _selectFilterDate(context),
+            // The onDeleted callback is what makes the 'x' icon appear.
+            onDeleted: provider.filterDate != null
+                ? () {
+                    Provider.of<ExpenseProvider>(
+                      context,
+                      listen: false,
+                    ).setFilterDate(null);
+                  }
+                : null,
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(8),
+              side: BorderSide(
+                color: provider.filterDate != null
+                    ? Theme.of(context).primaryColor
+                    : Colors.white38,
+              ),
+            ),
           ),
         ],
       ),
@@ -191,7 +311,8 @@ class HomePage extends StatelessWidget {
   Widget _buildExpenseList() {
     return Consumer<ExpenseProvider>(
       builder: (context, provider, child) {
-        if (provider.expenses.isEmpty && provider.filterCategory != null) {
+        if (provider.expenses.isEmpty &&
+            (provider.filterCategory != null || provider.filterDate != null)) {
           return const SliverFillRemaining(
             child: Center(child: Text("No expenses found for this filter.")),
           );

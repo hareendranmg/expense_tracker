@@ -6,7 +6,6 @@ import 'providers/expense_provider.dart';
 import 'ui/home_page.dart';
 
 void main() {
-  // Ensure that widget binding is initialized
   WidgetsFlutterBinding.ensureInitialized();
   runApp(const MyApp());
 }
