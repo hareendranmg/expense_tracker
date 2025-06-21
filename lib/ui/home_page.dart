@@ -116,69 +116,54 @@ class _HomePageState extends State<HomePage> {
     }
   }
 
-  // --- REVISED AND CORRECTED WIDGET ---
-  Widget _buildChart(
-    BuildContext context,
-    List<Expense> allUserFilteredExpenses,
-  ) {
-    final now = DateTime.now();
+  Widget _buildChart(BuildContext context, List<Expense> expensesForMonth) {
+    // Get the provider to access the new chart date state.
+    final provider = Provider.of<ExpenseProvider>(context);
 
-    final expensesForCurrentMonth = allUserFilteredExpenses.where((expense) {
-      return expense.date.year == now.year && expense.date.month == now.month;
-    }).toList();
-
-    if (expensesForCurrentMonth.isEmpty) {
-      return Center(
-        child: Padding(
-          padding: const EdgeInsets.only(top: 80.0),
-          child: Text(
+    if (expensesForMonth.isEmpty) {
+      // Show empty state with navigation arrows.
+      return Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          _buildMonthNavigationRow(context, provider, true), // is Empty = true
+          const Spacer(),
+          Text(
             "No expenses recorded this month.",
-            textAlign: TextAlign.center,
             style: TextStyle(color: Colors.grey[600], fontSize: 16),
           ),
-        ),
+          const Spacer(),
+        ],
       );
     }
 
     Map<Category, double> categoryTotals = {};
-    for (var expense in expensesForCurrentMonth) {
+    for (var expense in expensesForMonth) {
       categoryTotals.update(
         expense.category,
         (value) => value + expense.amount,
         ifAbsent: () => expense.amount,
       );
     }
-
-    double totalExpense = expensesForCurrentMonth.fold(
+    double totalExpense = expensesForMonth.fold(
       0,
       (sum, item) => sum + item.amount,
     );
 
     return FadeInUp(
       child: Column(
+        mainAxisAlignment: MainAxisAlignment.end,
         children: [
-          Padding(
-            padding: const EdgeInsets.only(top: 56),
-            child: Text(
-              'Expenses for ${DateFormat.yMMMM().format(now)}',
-              style: Theme.of(context).textTheme.bodyLarge,
-              textAlign: TextAlign.center,
-            ),
-          ),
-
+          _buildMonthNavigationRow(context, provider, false),
           Expanded(
             child: Row(
               children: [
                 Expanded(
                   flex: 1,
-                  // THE FIX: Use a Stack to overlay the text on the chart.
                   child: Stack(
                     alignment: Alignment.center,
                     children: [
-                      // Layer 1: The Pie Chart
                       PieChart(
                         PieChartData(
-                          // REMOVED `centerSpaceWidget` as it's not valid.
                           sections: categoryTotals.entries.map((entry) {
                             return PieChartSectionData(
                               color: _getCategoryColor(entry.key),
@@ -194,21 +179,16 @@ class _HomePageState extends State<HomePage> {
                             );
                           }).toList(),
                           sectionsSpace: 3,
-                          centerSpaceRadius: 50,
+                          centerSpaceRadius: 45,
                         ),
-                        swapAnimationDuration: const Duration(
-                          milliseconds: 750,
-                        ),
-                        swapAnimationCurve: Curves.easeInOutCubic,
                       ),
-                      // Layer 2: The total amount text
                       Column(
                         mainAxisAlignment: MainAxisAlignment.center,
                         children: [
                           Text(
                             NumberFormat.compactCurrency(
                               symbol: '₹',
-                              decimalDigits: 0,
+                              decimalDigits: 2,
                             ).format(totalExpense),
                             style: const TextStyle(
                               fontSize: 20,
@@ -257,6 +237,49 @@ class _HomePageState extends State<HomePage> {
                 ),
               ],
             ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildMonthNavigationRow(
+    BuildContext context,
+    ExpenseProvider provider,
+    bool isEmpty,
+  ) {
+    final chartDate = provider.chartDate;
+    final now = DateTime.now();
+    final isCurrentMonth =
+        chartDate.year == now.year && chartDate.month == now.month;
+
+    return Padding(
+      padding: EdgeInsets.only(top: 52),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.center,
+        crossAxisAlignment: CrossAxisAlignment.center,
+        children: [
+          IconButton(
+            icon: const Icon(Icons.arrow_back_ios_new, size: 20),
+            onPressed: () => provider.goToPreviousMonth(),
+          ),
+          const Spacer(),
+          Text(
+            "Expenses for ${DateFormat('MMMM y').format(chartDate)}",
+            style: TextStyle(
+              fontSize: 18,
+              fontWeight: FontWeight.bold,
+              color: Colors.grey[800],
+            ),
+          ),
+          const Spacer(),
+          IconButton(
+            icon: Icon(
+              Icons.arrow_forward_ios,
+              size: 20,
+              color: isCurrentMonth ? Colors.grey[300] : Colors.black,
+            ),
+            onPressed: isCurrentMonth ? null : () => provider.goToNextMonth(),
           ),
         ],
       ),

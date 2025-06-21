@@ -15,14 +15,15 @@ class ExpenseProvider with ChangeNotifier {
   Category? _filterCategory;
   String _searchQuery = '';
   DateTime? _filterDate;
+  DateTime _chartDate = DateTime.now();
 
   List<Expense> get expenses {
     List<Expense> filteredExpenses = _expenses;
-    if (_filterCategory != null) {
-      filteredExpenses = filteredExpenses
-          .where((exp) => exp.category == _filterCategory)
-          .toList();
-    }
+
+    filteredExpenses = filteredExpenses.where((expense) {
+      return expense.date.year == _chartDate.year &&
+          expense.date.month == _chartDate.month;
+    }).toList();
 
     if (_filterDate != null) {
       filteredExpenses = filteredExpenses.where((exp) {
@@ -31,6 +32,12 @@ class ExpenseProvider with ChangeNotifier {
             exp.date.month == _filterDate!.month &&
             exp.date.day == _filterDate!.day;
       }).toList();
+    }
+
+    if (_filterCategory != null) {
+      filteredExpenses = filteredExpenses
+          .where((exp) => exp.category == _filterCategory)
+          .toList();
     }
 
     if (_searchQuery.isNotEmpty) {
@@ -48,6 +55,7 @@ class ExpenseProvider with ChangeNotifier {
   SortBy get sortBy => _sortBy;
   Category? get filterCategory => _filterCategory;
   DateTime? get filterDate => _filterDate;
+  DateTime get chartDate => _chartDate;
 
   ExpenseProvider() {
     fetchExpenses();
@@ -104,5 +112,20 @@ class ExpenseProvider with ChangeNotifier {
   void setFilterDate(DateTime? date) {
     _filterDate = date;
     notifyListeners();
+  }
+
+  void goToPreviousMonth() {
+    _chartDate = DateTime(_chartDate.year, _chartDate.month - 1, 1);
+    notifyListeners(); // Tell the UI to rebuild the chart
+  }
+
+  void goToNextMonth() {
+    final now = DateTime.now();
+    // Prevent navigating to a future month.
+    if (_chartDate.year == now.year && _chartDate.month == now.month) {
+      return;
+    }
+    _chartDate = DateTime(_chartDate.year, _chartDate.month + 1, 1);
+    notifyListeners(); // Tell the UI to rebuild the chart
   }
 }
