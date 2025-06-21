@@ -23,10 +23,10 @@ class _HomePageState extends State<HomePage> {
   @override
   void initState() {
     super.initState();
+    final provider = Provider.of<ExpenseProvider>(context, listen: false);
+    provider.fetchExpenses(); // Initial fetch
     _searchController.addListener(() {
-      if (_searchController.text.isEmpty) {
-        Provider.of<ExpenseProvider>(context, listen: false).setSearchQuery('');
-      }
+      provider.setSearchQuery(_searchController.text);
     });
   }
 
@@ -38,7 +38,6 @@ class _HomePageState extends State<HomePage> {
 
   @override
   Widget build(BuildContext context) {
-    // We need to listen for changes to the search text to update the suffixIcon
     final provider = Provider.of<ExpenseProvider>(context);
 
     return Scaffold(
@@ -49,30 +48,21 @@ class _HomePageState extends State<HomePage> {
               height: 40,
               child: TextField(
                 controller: _searchController,
-                onChanged: (value) {
-                  // No need to call provider here if listener is set up, but this is more immediate.
-                  // Let's call provider directly for simplicity and instant feedback.
-                  Provider.of<ExpenseProvider>(
-                    context,
-                    listen: false,
-                  ).setSearchQuery(value);
-                  // We call setState to rebuild the suffixIcon of the textfield
-                  setState(() {});
-                },
                 decoration: InputDecoration(
                   hintText: 'Search expenses...',
-                  prefixIcon: const Icon(Icons.search, size: 20),
+                  prefixIcon: const Icon(
+                    Icons.search,
+                    size: 20,
+                    color: Colors.grey,
+                  ),
                   suffixIcon: _searchController.text.isNotEmpty
                       ? IconButton(
-                          icon: const Icon(Icons.clear, size: 20),
-                          onPressed: () {
-                            _searchController.clear();
-                            Provider.of<ExpenseProvider>(
-                              context,
-                              listen: false,
-                            ).setSearchQuery('');
-                            setState(() {});
-                          },
+                          icon: const Icon(
+                            Icons.clear,
+                            size: 20,
+                            color: Colors.grey,
+                          ),
+                          onPressed: () => _searchController.clear(),
                         )
                       : null,
                   contentPadding: const EdgeInsets.symmetric(
@@ -80,7 +70,7 @@ class _HomePageState extends State<HomePage> {
                     horizontal: 12,
                   ),
                   filled: true,
-                  fillColor: Colors.white.withOpacity(0.1),
+                  fillColor: Colors.black.withOpacity(0.05),
                   border: OutlineInputBorder(
                     borderRadius: BorderRadius.circular(20),
                     borderSide: BorderSide.none,
@@ -89,12 +79,10 @@ class _HomePageState extends State<HomePage> {
               ),
             ),
             pinned: true,
-            expandedHeight: 250.0,
+            expandedHeight: 320.0, // Increased height to better fit content
             flexibleSpace: FlexibleSpaceBar(
-              background: Padding(
-                padding: const EdgeInsets.only(
-                  top: 80.0,
-                ), // Adjust for app bar height
+              // THE FIX: Use SafeArea to prevent content from being clipped by the status bar.
+              background: SafeArea(
                 child: _buildChart(context, provider.expenses),
               ),
             ),
@@ -121,22 +109,39 @@ class _HomePageState extends State<HomePage> {
       context: context,
       initialDate: provider.filterDate ?? DateTime.now(),
       firstDate: DateTime(2000),
-      lastDate: DateTime.now().add(
-        const Duration(days: 365),
-      ), // Allow future dates if needed
+      lastDate: DateTime.now().add(const Duration(days: 365)),
     );
     if (picked != null) {
       provider.setFilterDate(picked);
     }
   }
 
-  Widget _buildChart(BuildContext context, List<Expense> expenses) {
-    if (expenses.isEmpty) {
-      return const Center(child: Text("No expenses yet. Add one!"));
+  // --- REVISED AND CORRECTED WIDGET ---
+  Widget _buildChart(
+    BuildContext context,
+    List<Expense> allUserFilteredExpenses,
+  ) {
+    final now = DateTime.now();
+
+    final expensesForCurrentMonth = allUserFilteredExpenses.where((expense) {
+      return expense.date.year == now.year && expense.date.month == now.month;
+    }).toList();
+
+    if (expensesForCurrentMonth.isEmpty) {
+      return Center(
+        child: Padding(
+          padding: const EdgeInsets.only(top: 80.0),
+          child: Text(
+            "No expenses recorded this month.",
+            textAlign: TextAlign.center,
+            style: TextStyle(color: Colors.grey[600], fontSize: 16),
+          ),
+        ),
+      );
     }
 
     Map<Category, double> categoryTotals = {};
-    for (var expense in expenses) {
+    for (var expense in expensesForCurrentMonth) {
       categoryTotals.update(
         expense.category,
         (value) => value + expense.amount,
@@ -144,74 +149,122 @@ class _HomePageState extends State<HomePage> {
       );
     }
 
-    double totalExpense = expenses.fold(0, (sum, item) => sum + item.amount);
+    double totalExpense = expensesForCurrentMonth.fold(
+      0,
+      (sum, item) => sum + item.amount,
+    );
 
     return FadeInUp(
-      child: Container(
-        padding: const EdgeInsets.all(16),
-        child: Row(
-          children: [
-            Expanded(
-              flex: 2,
-              child: PieChart(
-                PieChartData(
-                  sections: categoryTotals.entries.map((entry) {
-                    return PieChartSectionData(
-                      color: _getCategoryColor(entry.key),
-                      value: entry.value,
-                      title:
-                          '${((entry.value / totalExpense) * 100).toStringAsFixed(0)}%',
-                      radius: 50,
-                      titleStyle: const TextStyle(
-                        fontSize: 12,
-                        fontWeight: FontWeight.bold,
-                        color: Colors.white,
+      child: Column(
+        children: [
+          Padding(
+            padding: const EdgeInsets.only(top: 56),
+            child: Text(
+              'Expenses for ${DateFormat.yMMMM().format(now)}',
+              style: Theme.of(context).textTheme.bodyLarge,
+              textAlign: TextAlign.center,
+            ),
+          ),
+
+          Expanded(
+            child: Row(
+              children: [
+                Expanded(
+                  flex: 1,
+                  // THE FIX: Use a Stack to overlay the text on the chart.
+                  child: Stack(
+                    alignment: Alignment.center,
+                    children: [
+                      // Layer 1: The Pie Chart
+                      PieChart(
+                        PieChartData(
+                          // REMOVED `centerSpaceWidget` as it's not valid.
+                          sections: categoryTotals.entries.map((entry) {
+                            return PieChartSectionData(
+                              color: _getCategoryColor(entry.key),
+                              value: entry.value,
+                              title:
+                                  '${((entry.value / totalExpense) * 100).toStringAsFixed(0)}%',
+                              radius: 50,
+                              titleStyle: const TextStyle(
+                                fontSize: 14,
+                                fontWeight: FontWeight.bold,
+                                color: Colors.white,
+                              ),
+                            );
+                          }).toList(),
+                          sectionsSpace: 3,
+                          centerSpaceRadius: 50,
+                        ),
+                        swapAnimationDuration: const Duration(
+                          milliseconds: 750,
+                        ),
+                        swapAnimationCurve: Curves.easeInOutCubic,
                       ),
-                    );
-                  }).toList(),
-                  sectionsSpace: 2,
-                  centerSpaceRadius: 40,
+                      // Layer 2: The total amount text
+                      Column(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          Text(
+                            NumberFormat.compactCurrency(
+                              symbol: '₹',
+                              decimalDigits: 0,
+                            ).format(totalExpense),
+                            style: const TextStyle(
+                              fontSize: 20,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                          const Text(
+                            "Total",
+                            style: TextStyle(color: Colors.grey),
+                          ),
+                        ],
+                      ),
+                    ],
+                  ),
                 ),
-                swapAnimationDuration: const Duration(milliseconds: 750),
-                swapAnimationCurve: Curves.easeInOutCubic,
-              ),
-            ),
-            Expanded(
-              flex: 3,
-              child: Column(
-                mainAxisAlignment: MainAxisAlignment.center,
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: categoryTotals.entries.map((entry) {
-                  return Padding(
-                    padding: const EdgeInsets.symmetric(vertical: 4.0),
-                    child: Row(
-                      children: [
-                        Container(
-                          width: 12,
-                          height: 12,
-                          color: _getCategoryColor(entry.key),
+                Expanded(
+                  flex: 1,
+                  child: Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: categoryTotals.entries.map((entry) {
+                      return Padding(
+                        padding: const EdgeInsets.symmetric(vertical: 4.0),
+                        child: Row(
+                          children: [
+                            Container(
+                              width: 12,
+                              height: 12,
+                              color: _getCategoryColor(entry.key),
+                            ),
+                            const SizedBox(width: 8),
+                            Expanded(
+                              child: Text(
+                                '${entry.key.toString().split('.').last.capitalize()}: ${NumberFormat.currency(symbol: '₹', decimalDigits: 2).format(entry.value)}',
+                                style: Theme.of(
+                                  context,
+                                ).textTheme.bodySmall?.copyWith(fontSize: 13),
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                            ),
+                          ],
                         ),
-                        const SizedBox(width: 8),
-                        Text(
-                          '${entry.key.toString().split('.').last.capitalize()}: ${NumberFormat.currency(symbol: '₹').format(entry.value)}',
-                          style: Theme.of(context).textTheme.bodySmall,
-                        ),
-                      ],
-                    ),
-                  );
-                }).toList(),
-              ),
+                      );
+                    }).toList(),
+                  ),
+                ),
+              ],
             ),
-          ],
-        ),
+          ),
+        ],
       ),
     );
   }
 
-  // --- MODIFIED AND CORRECTED WIDGET ---
   Widget _buildControls(BuildContext context) {
     final provider = Provider.of<ExpenseProvider>(context);
-
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 8.0),
       child: Column(
@@ -219,88 +272,80 @@ class _HomePageState extends State<HomePage> {
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              // Sorting Dropdown
               DropdownButton<SortBy>(
                 value: provider.sortBy,
                 underline: Container(),
-                items: SortBy.values.map((sort) {
-                  return DropdownMenuItem(
-                    value: sort,
-                    child: Text(
-                      sort
-                          .toString()
-                          .split('.')
-                          .last
-                          .replaceAll('_', ' ')
-                          .capitalize(),
-                    ),
-                  );
-                }).toList(),
+                items: SortBy.values
+                    .map(
+                      (sort) => DropdownMenuItem(
+                        value: sort,
+                        child: Text(
+                          sort
+                              .toString()
+                              .split('.')
+                              .last
+                              .replaceAll('_', ' ')
+                              .capitalize(),
+                        ),
+                      ),
+                    )
+                    .toList(),
                 onChanged: (value) {
-                  if (value != null) {
+                  if (value != null)
                     Provider.of<ExpenseProvider>(
                       context,
                       listen: false,
                     ).setSortBy(value);
-                  }
                 },
               ),
-
-              // Filtering Dropdown
               DropdownButton<Category?>(
                 value: provider.filterCategory,
-                hint: const Text('All'),
+                hint: const Text('All Categories'),
                 underline: Container(),
                 items: [
                   const DropdownMenuItem<Category?>(
                     value: null,
                     child: Text('All Categories'),
                   ),
-                  ...Category.values.map((cat) {
-                    return DropdownMenuItem(
+                  ...Category.values.map(
+                    (cat) => DropdownMenuItem(
                       value: cat,
                       child: Text(cat.toString().split('.').last.capitalize()),
-                    );
-                  }),
+                    ),
+                  ),
                 ],
-                onChanged: (value) {
-                  Provider.of<ExpenseProvider>(
-                    context,
-                    listen: false,
-                  ).setFilterCategory(value);
-                },
+                onChanged: (value) => Provider.of<ExpenseProvider>(
+                  context,
+                  listen: false,
+                ).setFilterCategory(value),
               ),
             ],
           ),
           const SizedBox(height: 8),
-          // CORRECTED: Use InputChip on a new line
-          InputChip(
-            avatar: const Icon(Icons.calendar_today, size: 18),
-            label: Text(
-              provider.filterDate == null
-                  ? 'Filter by Date'
-                  : DateFormat.yMMMd().format(provider.filterDate!),
-              style: const TextStyle(fontWeight: FontWeight.w500),
-            ),
-            selected: provider.filterDate != null,
-            selectedColor: Theme.of(context).primaryColor.withOpacity(0.2),
-            onPressed: () => _selectFilterDate(context),
-            // The onDeleted callback is what makes the 'x' icon appear.
-            onDeleted: provider.filterDate != null
-                ? () {
-                    Provider.of<ExpenseProvider>(
+          Center(
+            child: InputChip(
+              avatar: Icon(
+                provider.filterDate != null
+                    ? Icons.event_available
+                    : Icons.calendar_today_outlined,
+                color: provider.filterDate != null
+                    ? Colors.deepPurple[800]
+                    : Colors.black54,
+                size: 20,
+              ),
+              label: Text(
+                provider.filterDate == null
+                    ? 'Filter by Date'
+                    : DateFormat.yMMMd().format(provider.filterDate!),
+              ),
+              selected: provider.filterDate != null,
+              onPressed: () => _selectFilterDate(context),
+              onDeleted: provider.filterDate != null
+                  ? () => Provider.of<ExpenseProvider>(
                       context,
                       listen: false,
-                    ).setFilterDate(null);
-                  }
-                : null,
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(8),
-              side: BorderSide(
-                color: provider.filterDate != null
-                    ? Theme.of(context).primaryColor
-                    : Colors.white38,
-              ),
+                    ).setFilterDate(null)
+                  : null,
             ),
           ),
         ],
@@ -311,19 +356,8 @@ class _HomePageState extends State<HomePage> {
   Widget _buildExpenseList() {
     return Consumer<ExpenseProvider>(
       builder: (context, provider, child) {
-        if (provider.expenses.isEmpty &&
-            (provider.filterCategory != null || provider.filterDate != null)) {
-          return const SliverFillRemaining(
-            child: Center(child: Text("No expenses found for this filter.")),
-          );
-        }
-        if (provider.expenses.isEmpty) {
-          return const SliverFillRemaining(
-            child: Center(
-              child: Text(""),
-            ), // The chart already says "No expenses yet"
-          );
-        }
+        if (provider.expenses.isEmpty)
+          return const SliverToBoxAdapter(child: SizedBox.shrink());
         return SliverList(
           delegate: SliverChildBuilderDelegate((context, index) {
             final expense = provider.expenses[index];
@@ -345,14 +379,12 @@ class _HomePageState extends State<HomePage> {
         motion: const StretchMotion(),
         children: [
           SlidableAction(
-            onPressed: (ctx) {
-              Navigator.push(
-                context,
-                MaterialPageRoute(
-                  builder: (context) => AddEditExpensePage(expense: expense),
-                ),
-              );
-            },
+            onPressed: (ctx) => Navigator.push(
+              context,
+              MaterialPageRoute(
+                builder: (context) => AddEditExpensePage(expense: expense),
+              ),
+            ),
             backgroundColor: Colors.blueAccent,
             foregroundColor: Colors.white,
             icon: Icons.edit,
@@ -364,7 +396,7 @@ class _HomePageState extends State<HomePage> {
               ScaffoldMessenger.of(context).showSnackBar(
                 const SnackBar(
                   content: Text('Expense deleted'),
-                  duration: Duration(seconds: 1),
+                  duration: Duration(seconds: 2),
                 ),
               );
             },
@@ -377,7 +409,6 @@ class _HomePageState extends State<HomePage> {
       ),
       child: Card(
         margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
-        elevation: 3,
         child: ListTile(
           contentPadding: const EdgeInsets.symmetric(
             horizontal: 20,
@@ -398,8 +429,15 @@ class _HomePageState extends State<HomePage> {
           ),
           subtitle: Text(DateFormat.yMMMd().format(expense.date)),
           trailing: Text(
-            NumberFormat.currency(symbol: '₹').format(expense.amount),
-            style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
+            NumberFormat.currency(
+              symbol: '₹',
+              decimalDigits: 2,
+            ).format(expense.amount),
+            style: const TextStyle(
+              fontWeight: FontWeight.bold,
+              fontSize: 16,
+              color: Colors.black87,
+            ),
           ),
         ),
       ),
@@ -417,7 +455,7 @@ class _HomePageState extends State<HomePage> {
       case Category.entertainment:
         return Colors.purple;
       case Category.other:
-        return Colors.grey;
+        return Colors.grey.shade500;
     }
   }
 
@@ -430,14 +468,13 @@ class _HomePageState extends State<HomePage> {
       case Category.work:
         return Icons.work;
       case Category.entertainment:
-        return Icons.movie;
+        return Icons.theaters;
       case Category.other:
         return Icons.more_horiz;
     }
   }
 }
 
-// Simple extension to capitalize strings
 extension StringExtension on String {
   String capitalize() {
     return "${this[0].toUpperCase()}${substring(1)}";
